@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WEBTOON Panel Count Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #fafaf7;
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #e6e6e0;
+    --accent: #1c5d3b;
+    --warn: #b06d00;
+    --bad: #aa2222;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    line-height: 1.5;
+  }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--line);
+    background: var(--card);
+  }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 32px 64px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;
+       color: var(--muted); margin-top: 32px; margin-bottom: 12px; font-weight: 600; }
+
+  #drop-zone {
+    display: block;
+    border: 2px dashed var(--line);
+    border-radius: 8px;
+    padding: 48px 24px;
+    text-align: center;
+    background: var(--card);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #drop-zone:hover, #drop-zone.dragover {
+    border-color: var(--accent);
+    background: #f0f6f2;
+  }
+  #drop-zone .big { font-size: 16px; font-weight: 500; }
+  #drop-zone .hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  #drop-zone input { display: none; }
+
+  #progress {
+    margin-top: 16px; padding: 12px 16px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+    font-family: ui-monospace, "SF Mono", Monaco, monospace; font-size: 13px;
+    display: none;
+  }
+  #progress.visible { display: block; }
+  .bar { height: 4px; background: #eee; border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 6px; padding: 20px 24px; margin-top: 12px; }
+  .card h3 { margin: 0 0 4px 0; font-size: 18px; }
+  .card .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px;
+           font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+  .badge.LOW, .badge\.LOW-MID { background: #e0efe6; color: var(--accent); }
+  .badge.MID { background: #fff1d6; color: var(--warn); }
+  .badge\.MID-HIGH, .badge.HIGH { background: #fae0e0; color: var(--bad); }
+  .grid { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px;
+          margin: 12px 0 4px 0; font-size: 14px; }
+  .grid .k { color: var(--muted); }
+  .notes { background: #faf9f4; padding: 12px 14px; border-radius: 4px;
+           font-family: ui-monospace, "SF Mono", Monaco, monospace; font-size: 12px;
+           white-space: pre-wrap; line-height: 1.6; }
+  details { margin-top: 12px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 8px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; padding: 6px 14px; border: 1px solid var(--accent);
+           background: var(--accent); color: white; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #154a2e; }
+  button:disabled { background: #aaa; border-color: #aaa; cursor: not-allowed; }
+  button.secondary { background: white; color: var(--accent); }
+  button.secondary:hover { background: #f0f6f2; }
+  .copied { color: var(--accent); font-size: 13px; }
+  .empty { color: var(--muted); padding: 32px; text-align: center;
+           border: 1px dashed var(--line); border-radius: 6px; background: var(--card); }
+  .error { color: var(--bad); padding: 12px 16px; background: #fff5f5;
+           border: 1px solid #fad6d6; border-radius: 4px; font-size: 13px;
+           white-space: pre-wrap; word-break: break-word; }
+  .footer-note { color: var(--muted); font-size: 12px; margin-top: 32px; }
+  .footer-note code { background: #f1f1ed; padding: 1px 5px; border-radius: 3px; }
+  .picker-row { margin-top: 8px; text-align: center; }
+  table.multi-table { width: 100%; border-collapse: collapse; margin-top: 8px;
+                      font-size: 13px; font-variant-numeric: tabular-nums; }
+  table.multi-table th, table.multi-table td {
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
+  }
+  table.multi-table th { color: var(--muted); font-weight: 500;
+                         font-size: 12px; text-transform: uppercase;
+                         letter-spacing: 0.04em; }
+  table.multi-table td.num { text-align: right; font-family: ui-monospace, "SF Mono", Monaco, monospace; }
+  table.multi-table tr.errrow td { color: var(--bad); }
+  table.multi-table tr.errrow td.err { font-size: 12px; }
+  table.multi-table tr.unchecked td { opacity: 0.4; }
+  table.multi-table tr.unchecked td.check-cell { opacity: 1; }
+  table.multi-table td.check-cell { text-align: center; }
+  table.multi-table input.row-check { cursor: pointer; margin: 0; }
+  .summary-num { font-size: 22px; font-weight: 600; }
+  .summary-num .unit { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WEBTOON Panel Count Tool</h1>
+  <div class="sub">Counts the panels (imagery with speech bubbles) across episodes to determine the average length, for series assignment &amp; difficulty review.</div>
+</header>
+<main>
+  <div id="drop-zone" role="button" tabindex="0">
+    <div class="big">Drop one or more .zip files (or a folder containing them)</div>
+    <div class="hint">Click to choose files. Each zip = one episode's stacked PSDs. Files never leave your machine.</div>
+  </div>
+  <input id="file-input" type="file" accept=".zip" multiple hidden>
+  <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
+  <div class="picker-row">
+    <button type="button" class="secondary" id="pick-folder-btn">Or pick a folder of zips…</button>
+  </div>
+
+  <div id="progress"><span id="progress-text">Working…</span><div class="bar"><div id="bar-fill"></div></div></div>
+
+  <h2>Analysis</h2>
+  <div id="results"><div class="empty">Drop zips above to start.</div></div>
+
+  <div class="footer-note">
+    Pure client-side tool. Uses <code>ag-psd</code> (PSD parsing) + <code>JSZip</code> (archive extraction). No server, no upload.
+  </div>
+</main>
+
+<script
+  src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+  onerror="this.onerror=null;this.src='https://unpkg.com/jszip@3.10.1/dist/jszip.min.js'"
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/ag-psd@30.1.1/dist/bundle.js"
+  onerror="this.onerror=null;this.src='https://unpkg.com/ag-psd@30.1.1/dist/bundle.js'"
+></script>
+
+<script>
+"use strict";
+
+// ---------- Constants (mirrors of analyze_episode.py / prep_tool_server.py) ----------
+const PANEL_CORRECTION = 0.87;
+
+const PANEL_KEYS = ["컷", "cut", "Cut", "CUT", "panel", "Panel"];
+const SFX_KEYS = ["효과음", "효과", "SFX", "sfx", "의성어", "의태어"];
+const DIALOGUE_KEYS = ["대사", "말풍선", "식자", "dialogue", "bubble"];
+const EFFECT_LINE_KEYS = ["효과선"];
+const TEXT_EFFECT_KEYS = [
+  "그라데이션", "그림자", "빛", "광선", "반짝",
+  "glow", "Glow", "GLOW", "shadow", "Shadow", "SHADOW",
+  "drop", "Drop", "이펙트", "스타일", "effect", "Effect",
+];
+
+const COPY_SUFFIX_RE = /\s*복사(\s*\d+)?\s*$/;
+
+// Visual gutter detection params (match Python defaults)
+const STD_MAX = 3.0;
+const GUTTER_MIN_ROWS = 40;
+const BBOX_MERGE_GAP = 20;
+// Strict-mode gutter brightness check: real webtoon gutters are nearly always
+// near-white or near-black. Mid-brightness uniform bands inside a panel
+// (skies, colored backgrounds, effect rays) get falsely flagged as gutters
+// by the legacy std-only rule, splitting one panel into multiple.
+const EXTREME_DARK = 25;
+const EXTREME_LIGHT = 230;
+
+// ---------- Small helpers ----------
+const $ = (q) => document.querySelector(q);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function nameHas(name, keys) {
+  if (!name) return false;
+  for (const k of keys) if (name.indexOf(k) !== -1) return true;
+  return false;
+}
+
+function canonicalPanelName(s) {
+  s = (s || "").trim();
+  while (true) {
+    const next = s.replace(COPY_SUFFIX_RE, "").trim();
+    if (next === s) return s;
+    s = next;
+  }
+}
+
+function isGroup(layer) { return Array.isArray(layer.children); }
+function isText(layer) { return !!layer.text; }
+
+function layerHasEffects(layer) {
+  const fx = layer.effects;
+  if (!fx) return false;
+  // ag-psd nests effects under keys like dropShadow, outerGlow, gradientOverlay, etc.
+  // Treat any present + not-explicitly-disabled effect as "has effects".
+  for (const k of Object.keys(fx)) {
+    const v = fx[k];
+    if (v == null) continue;
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        if (item && item.enabled !== false) return true;
+      }
+    } else if (typeof v === "object") {
+      if (v.enabled !== false) return true;
+    } else if (typeof v === "boolean") {
+      if (v) return true;
+    }
+  }
+  return false;
+}
+
+function getYRange(layer) {
+  const top = layer.top, bottom = layer.bottom;
+  if (top == null || bottom == null) return null;
+  if (top === 0 && bottom === 0) return null;
+  if (bottom <= top) return null;
+  return [Math.floor(top), Math.floor(bottom)];
+}
+
+function mergeYRanges(ranges, gap) {
+  if (!ranges.length) return 0;
+  ranges = ranges.slice().sort((a, b) => a[0] - b[0]);
+  const merged = [ranges[0].slice()];
+  for (let i = 1; i < ranges.length; i++) {
+    const [t, b] = ranges[i];
+    const last = merged[merged.length - 1];
+    if (t <= last[1] + gap) {
+      last[1] = Math.max(last[1], b);
+    } else {
+      merged.push([t, b]);
+    }
+  }
+  return merged.length;
+}
+
+// ---------- Visual panel detection: per-row stddev on the composite ----------
+// Direct port of count_panels_visual() from analyze_episode.py.
+function countPanelsVisual(psd) {
+  // ag-psd populates psd.canvas (HTMLCanvasElement) for the merged composite
+  // when the PSD was saved with "Maximize Compatibility" (almost always the case).
+  let imageData = null;
+  let w = 0, h = 0;
+  let method = null;
+
+  if (psd.canvas) {
+    const ctx = psd.canvas.getContext("2d");
+    w = psd.canvas.width;
+    h = psd.canvas.height;
+    if (h >= 100) {
+      imageData = ctx.getImageData(0, 0, w, h).data;
+      method = "canvas";
+    }
+  } else if (psd.imageData) {
+    // Some ag-psd configurations expose ImageData directly.
+    imageData = psd.imageData.data;
+    w = psd.imageData.width;
+    h = psd.imageData.height;
+    method = "imageData";
+  }
+
+  if (!imageData || h < 100) {
+    return { panels: null, method: method || "no-composite" };
+  }
+
+  // Per-row standard deviation in luminance space (0.299 R + 0.587 G + 0.114 B).
+  // Two state machines run in parallel over the same scan: "legacy" treats
+  // any uniform-color row as gutter; "strict" additionally requires the row
+  // mean to be near-white or near-black (the visual style of a real gutter).
+  let panels = 0;
+  let inContent = false;
+  let gutterRun = 0;
+  let panelsStrict = 0;
+  let inContentStrict = false;
+  let gutterRunStrict = 0;
+
+  for (let y = 0; y < h; y++) {
+    const rowStart = y * w * 4;
+    let sum = 0, sumSq = 0;
+    for (let x = 0; x < w; x++) {
+      const idx = rowStart + x * 4;
+      const lum = 0.299 * imageData[idx] +
+                  0.587 * imageData[idx + 1] +
+                  0.114 * imageData[idx + 2];
+      sum += lum;
+      sumSq += lum * lum;
+    }
+    const mean = sum / w;
+    const variance = sumSq / w - mean * mean;
+    const std = Math.sqrt(Math.max(0, variance));
+    const isGutterLegacy = std < STD_MAX;
+    const isGutterStrict = isGutterLegacy &&
+      (mean <= EXTREME_DARK || mean >= EXTREME_LIGHT);
+
+    if (isGutterLegacy) {
+      gutterRun++;
+      if (inContent && gutterRun >= GUTTER_MIN_ROWS) {
+        inContent = false;
+        gutterRun = 0;
+      }
+    } else {
+      if (!inContent) { panels++; inContent = true; }
+      gutterRun = 0;
+    }
+
+    if (isGutterStrict) {
+      gutterRunStrict++;
+      if (inContentStrict && gutterRunStrict >= GUTTER_MIN_ROWS) {
+        inContentStrict = false;
+        gutterRunStrict = 0;
+      }
+    } else {
+      if (!inContentStrict) { panelsStrict++; inContentStrict = true; }
+      gutterRunStrict = 0;
+    }
+  }
+  return { panels, panels_strict: panelsStrict, method, rows: h };
+}
+
+// ---------- Layer-tree walk (mirrors walk() in analyze_episode.py) ----------
+function walk(layer, acc) {
+  acc.total += 1;
+  const name = (layer.name || "").trim();
+
+  if (isGroup(layer)) {
+    acc.groups += 1;
+    if (nameHas(name, PANEL_KEYS)) acc.panel_named += 1;
+    if (nameHas(name, SFX_KEYS)) acc.sfx_named += 1;
+    if (nameHas(name, DIALOGUE_KEYS)) acc.dialogue_named += 1;
+    for (const child of layer.children) walk(child, acc);
+  } else if (isText(layer)) {
+    acc.text += 1;
+    const t = layer.text && layer.text.text;
+    if (t && acc.text_samples.length < 25) {
+      acc.text_samples.push(t.trim().replace(/\n/g, " ").slice(0, 120));
+    }
+    if (layerHasEffects(layer)) acc.text_with_effects += 1;
+    if (nameHas(name, TEXT_EFFECT_KEYS)) acc.effect_keyword_named += 1;
+    if (nameHas(name, SFX_KEYS)) acc.sfx_named += 1;
+    if (nameHas(name, DIALOGUE_KEYS)) acc.dialogue_named += 1;
+  } else {
+    acc.pixel += 1;
+    if (nameHas(name, SFX_KEYS)) acc.sfx_named += 1;
+    if (nameHas(name, EFFECT_LINE_KEYS)) acc.effect_line_named += 1;
+    if (nameHas(name, TEXT_EFFECT_KEYS)) acc.effect_keyword_named += 1;
+  }
+}
+
+// ---------- PSD-level analysis ----------
+function analyzePsdBytes(name, arrayBuffer) {
+  // skipLayerImageData: don't decode pixels for individual layers (we never use them).
+  // Keep composite imageData (default) so countPanelsVisual works.
+  // useImageData: true asks ag-psd to populate psd.imageData (a raw ImageData
+  // object) instead of psd.canvas (an HTMLCanvasElement). HTMLCanvasElement is
+  // capped by the browser — Safari truncates anything taller than ~16k px,
+  // which silently breaks the panel count for tall PSB strips. ImageData
+  // has no such cap. Older ag-psd versions ignore the option; in that case
+  // we fall back to psd.canvas below.
+  const psd = window.agPsd.readPsd(arrayBuffer, {
+    skipLayerImageData: true,
+    skipThumbnail: true,
+    useImageData: true,
+  });
+
+  const acc = {
+    total: 0, groups: 0, pixel: 0, text: 0,
+    panel_named: 0, sfx_named: 0,
+    dialogue_named: 0, effect_line_named: 0,
+    text_with_effects: 0, effect_keyword_named: 0,
+    text_samples: [],
+  };
+
+  const top_group_names = [];
+  const panel_container_kids = [];
+  const panel_yranges = [];
+  let has_separated_dialogue = false;
+  let has_separated_sfx = false;
+
+  for (const layer of (psd.children || [])) {
+    if (isGroup(layer)) {
+      const nm = (layer.name || "").trim();
+      top_group_names.push(nm);
+      if (nameHas(nm, DIALOGUE_KEYS)) has_separated_dialogue = true;
+      if (nameHas(nm, SFX_KEYS)) has_separated_sfx = true;
+      if (nameHas(nm, PANEL_KEYS)) {
+        for (const child of layer.children) {
+          if (isGroup(child)) {
+            panel_container_kids.push((child.name || "").trim().slice(0, 30));
+            const yr = getYRange(child);
+            if (yr) panel_yranges.push(yr);
+          }
+        }
+      }
+    }
+    walk(layer, acc);
+  }
+
+  const dedupSet = new Set(panel_container_kids.map(canonicalPanelName));
+  const visual = countPanelsVisual(psd);
+
+  return {
+    name,
+    size_bytes: arrayBuffer.byteLength,
+    width: psd.width,
+    height: psd.height,
+    top_group_names: top_group_names.slice(0, 50),
+    panel_subgroup_count: panel_container_kids.length,
+    panel_subgroup_count_dedup: dedupSet.size,
+    panels_by_bbox: mergeYRanges(panel_yranges, BBOX_MERGE_GAP),
+    panels_visual: visual.panels,
+    panels_visual_strict: visual.panels_strict,
+    panels_visual_method: visual.method,
+    panel_subgroup_sample: panel_container_kids.slice(0, 20),
+    has_separated_dialogue_group: has_separated_dialogue,
+    has_separated_sfx_group: has_separated_sfx,
+    ...acc,
+  };
+}
+
+// ---------- Aggregation ----------
+function lengthBand(panels) {
+  if (panels < 60) return "Below 60";
+  if (panels < 70) return "60-70";
+  if (panels < 80) return "70-80";
+  if (panels < 90) return "80-90";
+  if (panels < 100) return "90-100";
+  return "100+";
+}
+
+function gdDifficulty(separationScore, effectsPerPsd) {
+  if (separationScore < 0.5) return "HIGH";
+  if (separationScore < 0.85) return effectsPerPsd > 2.5 ? "MID-HIGH" : "MID";
+  if (effectsPerPsd > 2.5) return "MID";
+  if (effectsPerPsd > 1.0) return "LOW-MID";
+  return "LOW";
+}
+
+function titleFromZip(zipName) {
+  let n = zipName.replace(/\.zip$/i, "");
+  if (n.indexOf("_PSD") !== -1) n = n.split("_PSD")[0];
+  const m = n.match(/^(\d+)\.\s*(.+)$/);
+  if (m) n = m[2];
+  return n.trim();
+}
+
+function sumKey(arr, k) {
+  let s = 0;
+  for (const r of arr) s += (r[k] || 0);
+  return s;
+}
+
+function renderPrepRow(zipName, results, elapsedSec) {
+  const totals = {
+    stacked_height_px: sumKey(results, "height"),
+    layers: sumKey(results, "total"),
+    groups: sumKey(results, "groups"),
+    text_layers: sumKey(results, "text"),
+    panels_raw: sumKey(results, "panel_subgroup_count"),
+    panels_dedup: sumKey(results, "panel_subgroup_count_dedup"),
+    panels_by_bbox: sumKey(results, "panels_by_bbox"),
+    panels_visual: sumKey(results, "panels_visual"),
+    panels_visual_strict: sumKey(results, "panels_visual_strict"),
+    effect_keyword_named_layers: sumKey(results, "effect_keyword_named"),
+    psds_with_separated_dialogue:
+      results.filter(r => r.has_separated_dialogue_group).length,
+    psds_with_separated_sfx:
+      results.filter(r => r.has_separated_sfx_group).length,
+    story_psds: results.filter(r => (r.groups || 0) > 0).length,
+  };
+
+  // Strict count is the primary metric (legacy over-splits panels at mid-
+  // brightness colored bands). Legacy stays as a diagnostic column.
+  const visualLegacy = totals.panels_visual || 0;
+  const visualStrict = totals.panels_visual_strict || 0;
+  const visual = visualStrict;
+  const adjusted = Math.round(visual * PANEL_CORRECTION);
+
+  const story = Math.max(1, totals.story_psds || 1);
+  const sepDCount = totals.psds_with_separated_dialogue;
+  const sepSCount = totals.psds_with_separated_sfx;
+  const sepD = sepDCount / story;
+  const sepS = sepSCount / story;
+  const sepScore = (sepD + sepS) / 2;
+  const effectsTotal = totals.effect_keyword_named_layers;
+  const effectsPer = effectsTotal / story;
+
+  const gd = gdDifficulty(sepScore, effectsPer);
+  const band = lengthBand(adjusted);
+
+  const psdLines = [];
+  for (const p of results) {
+    if ((p.groups || 0) === 0) continue;
+    const flags = [];
+    if (p.has_separated_dialogue_group) flags.push("대사");
+    if (p.has_separated_sfx_group) flags.push("효과음");
+    const flagsStr = flags.length ? flags.join("+") : "no separated dialogue/SFX";
+    psdLines.push(
+      `  - ${p.name}: ~${Math.round((p.panels_visual || 0) * PANEL_CORRECTION)} panels, h=${p.height}px, ${flagsStr}`
+    );
+  }
+
+  const noteLines = [
+    `- Single-episode sample: ~${adjusted} panels (visual count ${visual}, calibrated ×${PANEL_CORRECTION})`,
+    `- Layer separation: 대사 in ${sepDCount}/${story} PSDs (${Math.round(sepD*100)}%), 효과음 in ${sepSCount}/${story} (${Math.round(sepS*100)}%)`,
+    `- Effect-related layer names: ${effectsTotal} total (${effectsPer.toFixed(1)} per PSD)`,
+  ];
+  if ((totals.text_layers || 0) <= 2) {
+    noteLines.push("- All dialogue/SFX appears rasterized (almost no editable text layers)");
+  }
+  if (effectsPer > 2.0) {
+    noteLines.push("- Heavy effect-keyword count suggests stylized typography — confirm whether effects need recreation");
+  }
+
+  return {
+    zip_name: zipName,
+    title_guess: titleFromZip(zipName),
+    panels_raw: visual,
+    panels_legacy: visualLegacy,
+    panels_estimate: adjusted,
+    length_band: band,
+    gd_difficulty: gd,
+    gd_notes_lines: noteLines,
+    psd_breakdown: psdLines,
+    elapsed_sec: elapsedSec,
+    stats: {
+      story_psds: story,
+      sep_dialogue_pct: Math.round(sepD * 100),
+      sep_sfx_pct: Math.round(sepS * 100),
+      effects_total: effectsTotal,
+      effects_per_psd: Number(effectsPer.toFixed(1)),
+      text_layers: totals.text_layers,
+      stacked_height_px: totals.stacked_height_px,
+    },
+    raw_results: results,
+  };
+}
+
+// ---------- Drive the UI ----------
+function setProgress(text, pct) {
+  const p = $("#progress");
+  p.classList.add("visible");
+  $("#progress-text").textContent = text;
+  if (pct != null) $("#bar-fill").style.width = `${Math.round(pct * 100)}%`;
+}
+function hideProgress() { $("#progress").classList.remove("visible"); }
+
+function librariesReady() {
+  return typeof JSZip !== "undefined" && typeof window.agPsd !== "undefined";
+}
+
+// Analyze one zip → returns the prep row (does not render).
+async function analyzeOneZip(file, onPsdProgress) {
+  const t0 = performance.now();
+
+  let zip;
+  try {
+    const buf = await file.arrayBuffer();
+    zip = await JSZip.loadAsync(buf);
+  } catch (e) {
+    throw new Error(`Could not open zip: ${e.message || e}`);
+  }
+
+  const allFiles = Object.values(zip.files).filter(f => !f.dir);
+  const psdEntries = allFiles
+    .filter(f => /\.(psd|psb)$/i.test(f.name))
+    .filter(f => {
+      const base = f.name.split("/").pop();
+      // Skip macOS metadata: __MACOSX/ folder + ._foo.psd resource forks.
+      return !f.name.includes("__MACOSX/") && !base.startsWith("._");
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (!psdEntries.length) {
+    const sample = allFiles.slice(0, 6).map(f => f.name).join("\n  ");
+    throw new Error(
+      `No .psd / .psb files inside this zip.\n` +
+      `Contains ${allFiles.length} file${allFiles.length === 1 ? "" : "s"}:\n  ` +
+      (sample || "(empty)")
+    );
+  }
+
+  const results = [];
+  for (let i = 0; i < psdEntries.length; i++) {
+    const entry = psdEntries[i];
+    const baseName = entry.name.split("/").pop();
+    onPsdProgress && onPsdProgress(baseName, i + 1, psdEntries.length);
+    await sleep(0);
+
+    try {
+      const psdBuf = await entry.async("arraybuffer");
+      results.push(analyzePsdBytes(baseName, psdBuf));
+    } catch (e) {
+      console.error(`Failed on ${entry.name}:`, e);
+      results.push({
+        name: baseName,
+        error: `${e.name || "Error"}: ${e.message || e}`,
+        size_bytes: 0,
+        groups: 0, total: 0, text: 0, pixel: 0,
+        height: 0, width: 0,
+        panel_subgroup_count: 0, panel_subgroup_count_dedup: 0,
+        panels_by_bbox: 0, panels_visual: 0,
+        has_separated_dialogue_group: false,
+        has_separated_sfx_group: false,
+        effect_keyword_named: 0, sfx_named: 0,
+        dialogue_named: 0, effect_line_named: 0,
+        panel_named: 0, text_with_effects: 0,
+      });
+    }
+  }
+
+  const elapsed = Number(((performance.now() - t0) / 1000).toFixed(1));
+  return renderPrepRow(file.name, results, elapsed);
+}
+
+// Orchestrates one-or-many zips. Renders incrementally so the user sees
+// rows appear as each episode finishes.
+async function processFiles(files) {
+  if (!librariesReady()) {
+    const missing = [];
+    if (typeof JSZip === "undefined") missing.push("JSZip");
+    if (typeof window.agPsd === "undefined") missing.push("ag-psd");
+    showError(
+      `Required librar${missing.length > 1 ? "ies" : "y"} ` +
+      `(${missing.join(", ")}) didn't load from the CDN.\n\n` +
+      `Check your internet connection and reload the page.`
+    );
+    return;
+  }
+
+  const zipFiles = Array.from(files).filter(f => /\.zip$/i.test(f.name));
+  if (!zipFiles.length) {
+    showError("No .zip files found in your selection. Drop zips, or a folder containing zips.");
+    return;
+  }
+  zipFiles.sort((a, b) => a.name.localeCompare(b.name));
+
+  $("#results").innerHTML = "";
+  const rows = [];
+
+  for (let i = 0; i < zipFiles.length; i++) {
+    const file = zipFiles[i];
+    const fileFrac = (j, total) => (i + (j / total)) / zipFiles.length;
+    setProgress(
+      `[${i + 1}/${zipFiles.length}] Reading ${file.name}…`,
+      i / zipFiles.length
+    );
+    await sleep(0);
+
+    try {
+      const row = await analyzeOneZip(file, (psdName, j, total) => {
+        setProgress(
+          `[${i + 1}/${zipFiles.length}] ${file.name} → ${psdName} (${j}/${total})`,
+          fileFrac(j, total)
+        );
+      });
+      rows.push(row);
+    } catch (e) {
+      rows.push({ zip_name: file.name, error: e.message || String(e) });
+    }
+    renderMultiSummary(rows);
+  }
+  hideProgress();
+}
+
+function dedupTotal(row) {
+  return sumKey(row.raw_results, "panel_subgroup_count_dedup");
+}
+
+function avg(arr) {
+  if (!arr.length) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+function median(arr) {
+  if (!arr.length) return 0;
+  const s = arr.slice().sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function bandLow(n) { return Math.floor(n / 10) * 10; }
+function band10(n) { const lo = bandLow(n); return `${lo}-${lo + 10}`; }
+
+// Values within ±4 of a rate threshold (70 or 80) are flagged as "Around X"
+// instead of committing to a 10-wide band — these are the cutoffs where
+// LOW/MID/higher rate categories change, so borderline cases need judgment.
+const RATE_THRESHOLDS = [70, 80];
+const NEAR_THRESHOLD_BUFFER = 4;
+
+function bandLabel(n) {
+  if (!n) return "—";
+  const near = RATE_THRESHOLDS.filter(t => Math.abs(n - t) <= NEAR_THRESHOLD_BUFFER);
+  if (near.length === 1) return `Around ${near[0]}`;
+  return band10(n);
+}
+
+// Tracks zip names the user has unchecked so the average/median exclude
+// them. Persists across incremental renders during a single batch.
+const uncheckedZips = new Set();
+
+function renderMultiSummary(rows) {
+  const errored = rows.filter(r => r.error);
+  const includable = rows.filter(r => !r.error);
+  const selected = includable.filter(r => !uncheckedZips.has(r.zip_name));
+  const n = selected.length;
+
+  const rawSel = selected.map(r => r.panels_raw);
+  const dedupSel = selected.map(r => dedupTotal(r));
+  const meanRaw = Math.round(avg(rawSel));
+  const medRaw = Math.round(median(rawSel));
+  const meanDedup = Math.round(avg(dedupSel));
+  const medDedup = Math.round(median(dedupSel));
+  const band = n ? bandLabel(medRaw) : "—";
+
+  const bodyRows = rows.map(r => {
+    if (r.error) {
+      return `<tr class="errrow">
+        <td></td>
+        <td>${escapeHtml(r.zip_name)}</td>
+        <td colspan="5" class="err">${escapeHtml(r.error)}</td>
+      </tr>`;
+    }
+    const unchecked = uncheckedZips.has(r.zip_name);
+    return `<tr data-zip="${escapeHtml(r.zip_name)}"${unchecked ? ' class="unchecked"' : ''}>
+      <td class="check-cell"><input type="checkbox" class="row-check"${unchecked ? '' : ' checked'}></td>
+      <td>${escapeHtml(r.title_guess || r.zip_name)}</td>
+      <td class="num">${r.panels_raw}</td>
+      <td class="num" style="color:var(--muted)">${r.panels_legacy ?? "—"}</td>
+      <td class="num">${dedupTotal(r)}</td>
+      <td class="num">${r.stats.story_psds}</td>
+      <td class="num">${r.elapsed_sec}s</td>
+    </tr>`;
+  }).join("");
+
+  const errCount = errored.length;
+  const includedCount = includable.length;
+  const summarySub = includedCount
+    ? `${n} of ${includedCount} episode${includedCount === 1 ? "" : "s"} included${errCount ? ` (${errCount} failed)` : ""}`
+    : "Waiting for first result…";
+
+  $("#results").innerHTML = `
+    <div class="card">
+      <h3>Series average</h3>
+      <div class="meta">${summarySub}</div>
+      <div class="grid">
+        <div class="k">Length band (median)</div>
+        <div><span class="summary-num">${band}<span class="unit">panels</span></span></div>
+        <div class="k">Median (strict)</div>
+        <div>${medRaw} panels per episode</div>
+        <div class="k">Mean (strict)</div>
+        <div>${meanRaw} panels per episode</div>
+        <div class="k">Median dedup</div>
+        <div>${medDedup} <span style="color:var(--muted);">— artist-named panel groups; 0 if not labeled</span></div>
+      </div>
+      <h2 style="margin-top:20px">Per-episode <span style="color:var(--muted);font-weight:400;font-size:11px;text-transform:none;letter-spacing:0;">— uncheck to exclude from average/median</span></h2>
+      <table class="multi-table">
+        <thead><tr>
+          <th style="width:32px"></th>
+          <th>Episode</th>
+          <th style="text-align:right">Panels</th>
+          <th style="text-align:right" title="Legacy gutter detection — any uniform-color row. Tends to over-split panels at colored backgrounds.">Legacy</th>
+          <th style="text-align:right">Dedup</th>
+          <th style="text-align:right">Story PSDs</th>
+          <th style="text-align:right">Time</th>
+        </tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+      <div class="row">
+        <button class="secondary" id="check-all">Check all</button>
+        <button class="secondary" id="check-none">Uncheck all</button>
+        <button class="secondary" id="copy-tsv">Copy table as TSV</button>
+        <button id="reset-btn">Start over</button>
+        <span class="copied" id="copied"></span>
+      </div>
+    </div>`;
+
+  document.querySelectorAll(".row-check").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      const tr = e.target.closest("tr");
+      const zip = tr.getAttribute("data-zip");
+      if (e.target.checked) uncheckedZips.delete(zip);
+      else uncheckedZips.add(zip);
+      renderMultiSummary(rows);
+    });
+  });
+
+  $("#check-all").addEventListener("click", () => {
+    uncheckedZips.clear();
+    renderMultiSummary(rows);
+  });
+  $("#check-none").addEventListener("click", () => {
+    includable.forEach((r) => uncheckedZips.add(r.zip_name));
+    renderMultiSummary(rows);
+  });
+  $("#copy-tsv").addEventListener("click", () => {
+    const header = ["Included", "Episode", "Panels", "Legacy", "Dedup", "Story PSDs", "Seconds"].join("\t");
+    const body = rows.map((r) => r.error
+      ? ["?", r.zip_name, "ERROR: " + r.error, "", "", "", ""].join("\t")
+      : [uncheckedZips.has(r.zip_name) ? "" : "✓",
+         r.title_guess || r.zip_name, r.panels_raw,
+         r.panels_legacy ?? "",
+         dedupTotal(r), r.stats.story_psds, r.elapsed_sec].join("\t")
+    ).join("\n");
+    const summary = `\n\n${n} included\tMedian=${medRaw}\tMean=${meanRaw}\tBand=${band}`;
+    copyToClipboard(header + "\n" + body + summary, "TSV copied");
+  });
+  $("#reset-btn").addEventListener("click", () => {
+    uncheckedZips.clear();
+    $("#results").innerHTML = '<div class="empty">Drop zips above to start.</div>';
+    $("#file-input").value = "";
+    $("#folder-input").value = "";
+  });
+}
+
+function badgeBg(level) {
+  if (level === "LOW" || level === "LOW-MID") return "#e0efe6";
+  if (level === "MID") return "#fff1d6";
+  return "#fae0e0"; // MID-HIGH or HIGH
+}
+function badgeFg(level) {
+  if (level === "LOW" || level === "LOW-MID") return "var(--accent)";
+  if (level === "MID") return "var(--warn)";
+  return "var(--bad)";
+}
+
+async function copyToClipboard(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const el = $("#copied");
+    el.textContent = msg + " ✓";
+    setTimeout(() => { el.textContent = ""; }, 1800);
+  } catch (e) {
+    showError("Copy failed: " + e.message);
+  }
+}
+
+function csvCell(s) {
+  s = String(s);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function showError(msg) {
+  $("#results").innerHTML = `<div class="error">${escapeHtml(msg)}</div>`;
+}
+
+// ---------- Wire up drop zone + file inputs ----------
+const dropZone = $("#drop-zone");
+const fileInput = $("#file-input");
+const folderInput = $("#folder-input");
+const pickFolderBtn = $("#pick-folder-btn");
+
+fileInput.addEventListener("change", (e) => {
+  if (e.target.files && e.target.files.length) processFiles(e.target.files);
+});
+folderInput.addEventListener("change", (e) => {
+  if (e.target.files && e.target.files.length) processFiles(e.target.files);
+});
+pickFolderBtn.addEventListener("click", () => folderInput.click());
+
+// The drop zone is now a plain <div>, so wire up click → file picker.
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+
+["dragenter", "dragover"].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add("dragover");
+  });
+});
+dropZone.addEventListener("dragleave", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dropZone.classList.remove("dragover");
+});
+
+// Walk a dropped DataTransferItem entry (File or Directory) and collect all
+// File objects under it. Works in Chrome / Safari / Firefox via the webkit
+// entry API.
+async function collectFilesFromEntry(entry) {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      entry.file((f) => resolve([f]), () => resolve([]));
+    });
+  }
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const allChildren = [];
+    // readEntries returns at most ~100 at a time; loop until empty.
+    await new Promise((resolve) => {
+      const readBatch = () => {
+        reader.readEntries((entries) => {
+          if (!entries.length) return resolve();
+          allChildren.push(...entries);
+          readBatch();
+        }, () => resolve());
+      };
+      readBatch();
+    });
+    const nested = await Promise.all(allChildren.map(collectFilesFromEntry));
+    return nested.flat();
+  }
+  return [];
+}
+
+dropZone.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dropZone.classList.remove("dragover");
+
+  // Capture everything synchronously — DataTransfer can be cleared after
+  // the handler yields to the event loop.
+  const dt = e.dataTransfer;
+  const directFiles = dt && dt.files ? Array.from(dt.files) : [];
+
+  // Inspect items only to detect folders. We don't use entry.file() for plain
+  // file drops because it's flaky in Safari and unnecessary — dataTransfer.files
+  // already contains them.
+  let entries = [];
+  if (dt && dt.items && dt.items.length) {
+    for (const item of dt.items) {
+      if (item.kind === "file" && typeof item.webkitGetAsEntry === "function") {
+        const ent = item.webkitGetAsEntry();
+        if (ent) entries.push(ent);
+      }
+    }
+  }
+  const hasFolders = entries.some((ent) => ent && ent.isDirectory);
+
+  let files = directFiles;
+  if (hasFolders) {
+    try {
+      const collected = await Promise.all(entries.map(collectFilesFromEntry));
+      const walked = collected.flat();
+      // Merge: walked covers folders; directFiles covers any plain files
+      // that were dropped alongside. Dedupe by name+size.
+      const seen = new Set(walked.map((f) => f.name + "|" + f.size));
+      files = walked.concat(directFiles.filter((f) => !seen.has(f.name + "|" + f.size)));
+    } catch (err) {
+      console.warn("Folder walk failed, using direct files:", err);
+      files = directFiles;
+    }
+  }
+
+  if (!files.length) {
+    showError(
+      "Nothing came through on the drop " +
+      `(items=${dt && dt.items ? dt.items.length : 0}, ` +
+      `files=${directFiles.length}, ` +
+      `entries=${entries.length}). ` +
+      "Try clicking the drop zone to choose files instead."
+    );
+    return;
+  }
+  processFiles(files);
+});
+
+// Suppress browser default (navigate to file) for drops that miss the zone.
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+// Sanity check that libraries loaded. Note: the same check also runs inside
+// processFiles(), because this banner can be wiped by a fast drop-on-load.
+window.addEventListener("load", () => {
+  if (!librariesReady()) {
+    showError("Libraries failed to load (JSZip / ag-psd). Check your internet connection — the page loads them from a CDN on first visit.");
+  }
+});
+</script>
+</body>
+</html>

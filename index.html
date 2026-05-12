@@ -88,6 +88,9 @@
   .copied { color: var(--accent); font-size: 13px; }
   .empty { color: var(--muted); padding: 32px; text-align: center;
            border: 1px dashed var(--line); border-radius: 6px; background: var(--card); }
+  .empty-illust { display: block; margin: 0 auto 16px; width: 100px;
+                  height: auto; color: var(--accent); opacity: 0.4; }
+  .empty-illust * { vector-effect: non-scaling-stroke; }
   .error { color: var(--bad); padding: 12px 16px; background: #fff5f5;
            border: 1px solid #fad6d6; border-radius: 4px; font-size: 13px;
            white-space: pre-wrap; word-break: break-word; }
@@ -120,10 +123,10 @@
 </header>
 <main>
   <div id="drop-zone" role="button" tabindex="0">
-    <div class="big">Drop one or more .zip files (or a folder containing them)</div>
-    <div class="hint">Click to choose files. Each zip = one episode's stacked PSDs. Files never leave your machine.</div>
+    <div class="big">Drop one or more <code>.zip</code> or <code>.jpg</code> files (or a folder containing them)</div>
+    <div class="hint">Click to choose files. Each zip = one episode's stacked PSDs; each jpg/png = one full episode strip. Files never leave your machine.</div>
   </div>
-  <input id="file-input" type="file" accept=".zip" multiple hidden>
+  <input id="file-input" type="file" accept=".zip,.jpg,.jpeg,.png,.webp" multiple hidden>
   <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
   <div class="picker-row">
     <button type="button" class="secondary" id="pick-folder-btn">Or pick a folder of zips…</button>
@@ -132,7 +135,23 @@
   <div id="progress"><span id="progress-text">Working…</span><div class="bar"><div id="bar-fill"></div></div></div>
 
   <h2>Analysis</h2>
-  <div id="results"><div class="empty">Drop zips above to start.</div></div>
+  <div id="results"><div class="empty">
+    <svg class="empty-illust" viewBox="0 0 160 240" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+        <rect x="15" y="10" width="130" height="55" rx="3"/>
+        <circle cx="80" cy="38" r="14"/>
+        <path d="M71 36 L75 40 M85 40 L89 36"/>
+        <rect x="15" y="75" width="130" height="55" rx="3"/>
+        <path d="M50 95 L110 95 Q120 95 120 105 L120 118 Q120 128 110 128 L80 128 L73 137 L72 128 L60 128 Q50 128 50 118 Z"/>
+        <rect x="15" y="140" width="130" height="90" rx="3"/>
+        <circle cx="55" cy="170" r="7"/>
+        <path d="M55 177 L55 200 M55 185 L45 200 M55 185 L65 200"/>
+        <circle cx="105" cy="170" r="7"/>
+        <path d="M105 177 L105 200 M105 185 L95 200 M105 185 L115 200"/>
+      </g>
+    </svg>
+    Drop zips above to start.
+  </div></div>
 
   <div class="footer-note">
     Pure client-side tool. Uses <code>ag-psd</code> (PSD parsing) + <code>JSZip</code> (archive extraction). No server, no upload.
@@ -445,8 +464,8 @@ function gdDifficulty(separationScore, effectsPerPsd) {
   return "LOW";
 }
 
-function titleFromZip(zipName) {
-  let n = zipName.replace(/\.zip$/i, "");
+function titleFromFile(fileName) {
+  let n = fileName.replace(/\.(zip|jpe?g|png|webp)$/i, "");
   if (n.indexOf("_PSD") !== -1) n = n.split("_PSD")[0];
   const m = n.match(/^(\d+)\.\s*(.+)$/);
   if (m) n = m[2];
@@ -475,7 +494,9 @@ function renderPrepRow(zipName, results, elapsedSec) {
       results.filter(r => r.has_separated_dialogue_group).length,
     psds_with_separated_sfx:
       results.filter(r => r.has_separated_sfx_group).length,
-    story_psds: results.filter(r => (r.groups || 0) > 0).length,
+    // Treat image segments as "story PSDs" too — they're equivalent units
+    // (one stacked strip per file).
+    story_psds: results.filter(r => (r.groups || 0) > 0 || r.is_image).length,
   };
 
   // Strict count is the primary metric (legacy over-splits panels at mid-
@@ -523,7 +544,7 @@ function renderPrepRow(zipName, results, elapsedSec) {
 
   return {
     zip_name: zipName,
-    title_guess: titleFromZip(zipName),
+    title_guess: titleFromFile(zipName),
     panels_raw: visual,
     panels_legacy: visualLegacy,
     panels_estimate: adjusted,
@@ -571,8 +592,8 @@ async function analyzeOneZip(file, onPsdProgress) {
   }
 
   const allFiles = Object.values(zip.files).filter(f => !f.dir);
-  const psdEntries = allFiles
-    .filter(f => /\.(psd|psb)$/i.test(f.name))
+  const segmentEntries = allFiles
+    .filter(f => /\.(psd|psb|jpe?g|png|webp)$/i.test(f.name))
     .filter(f => {
       const base = f.name.split("/").pop();
       // Skip macOS metadata: __MACOSX/ folder + ._foo.psd resource forks.
@@ -580,25 +601,30 @@ async function analyzeOneZip(file, onPsdProgress) {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  if (!psdEntries.length) {
+  if (!segmentEntries.length) {
     const sample = allFiles.slice(0, 6).map(f => f.name).join("\n  ");
     throw new Error(
-      `No .psd / .psb files inside this zip.\n` +
+      `No .psd / .psb / .jpg / .png / .webp files inside this zip.\n` +
       `Contains ${allFiles.length} file${allFiles.length === 1 ? "" : "s"}:\n  ` +
       (sample || "(empty)")
     );
   }
 
   const results = [];
-  for (let i = 0; i < psdEntries.length; i++) {
-    const entry = psdEntries[i];
+  for (let i = 0; i < segmentEntries.length; i++) {
+    const entry = segmentEntries[i];
     const baseName = entry.name.split("/").pop();
-    onPsdProgress && onPsdProgress(baseName, i + 1, psdEntries.length);
+    onPsdProgress && onPsdProgress(baseName, i + 1, segmentEntries.length);
     await sleep(0);
 
     try {
-      const psdBuf = await entry.async("arraybuffer");
-      results.push(analyzePsdBytes(baseName, psdBuf));
+      if (/\.(psd|psb)$/i.test(baseName)) {
+        const psdBuf = await entry.async("arraybuffer");
+        results.push(analyzePsdBytes(baseName, psdBuf));
+      } else {
+        const blob = await entry.async("blob");
+        results.push(await analyzeImageBlob(blob, baseName));
+      }
     } catch (e) {
       console.error(`Failed on ${entry.name}:`, e);
       results.push({
@@ -608,7 +634,7 @@ async function analyzeOneZip(file, onPsdProgress) {
         groups: 0, total: 0, text: 0, pixel: 0,
         height: 0, width: 0,
         panel_subgroup_count: 0, panel_subgroup_count_dedup: 0,
-        panels_by_bbox: 0, panels_visual: 0,
+        panels_by_bbox: 0, panels_visual: 0, panels_visual_strict: 0,
         has_separated_dialogue_group: false,
         has_separated_sfx_group: false,
         effect_keyword_named: 0, sfx_named: 0,
@@ -622,47 +648,186 @@ async function analyzeOneZip(file, onPsdProgress) {
   return renderPrepRow(file.name, results, elapsed);
 }
 
-// Orchestrates one-or-many zips. Renders incrementally so the user sees
-// rows appear as each episode finishes.
+// Analyze a single image (JPG / PNG / WebP) as one episode. Uses the same
+// row-stddev algorithm as the PSD path, but reads pixels by tiling the
+// image through a canvas (browser-native decode, no library needed).
+// GUTTER_MIN_ROWS auto-scales with image width so a half-resolution
+// published JPG doesn't under-count gutters.
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
+const PSD_REFERENCE_WIDTH = 1500;   // GUTTER_MIN_ROWS was tuned at this width
+const CANVAS_TILE_HEIGHT = 8000;    // safe under Safari's ~16k canvas height cap
+
+// Per-segment image analysis. Returns the same shape as analyzePsdBytes so
+// renderPrepRow can aggregate PSDs and images together inside one zip.
+async function analyzeImageBlob(blob, name, onProgress) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch (e) {
+    throw new Error(`Could not decode image ${name}: ${e.message || e}`);
+  }
+  const w = bitmap.width;
+  const h = bitmap.height;
+  if (w < 10 || h < 100) {
+    if (bitmap.close) bitmap.close();
+    throw new Error(`Image ${name} too small (${w}×${h}px) — expected a tall webtoon strip.`);
+  }
+
+  const gutterMinRows = Math.max(
+    15,
+    Math.round(GUTTER_MIN_ROWS * w / PSD_REFERENCE_WIDTH)
+  );
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  let panels = 0, inContent = false, gutterRun = 0;
+  let panelsStrict = 0, inContentStrict = false, gutterRunStrict = 0;
+
+  for (let yStart = 0; yStart < h; yStart += CANVAS_TILE_HEIGHT) {
+    const tileH = Math.min(CANVAS_TILE_HEIGHT, h - yStart);
+    canvas.height = tileH;
+    ctx.drawImage(bitmap, 0, yStart, w, tileH, 0, 0, w, tileH);
+    const data = ctx.getImageData(0, 0, w, tileH).data;
+    if (onProgress) onProgress(yStart + tileH, h);
+    await sleep(0);
+
+    for (let y = 0; y < tileH; y++) {
+      const rowStart = y * w * 4;
+      let sum = 0, sumSq = 0;
+      for (let x = 0; x < w; x++) {
+        const idx = rowStart + x * 4;
+        const lum = 0.299 * data[idx] +
+                    0.587 * data[idx + 1] +
+                    0.114 * data[idx + 2];
+        sum += lum;
+        sumSq += lum * lum;
+      }
+      const mean = sum / w;
+      const variance = sumSq / w - mean * mean;
+      const std = Math.sqrt(Math.max(0, variance));
+      const isGutterLegacy = std < STD_MAX;
+      const isGutterStrict = isGutterLegacy &&
+        (mean <= EXTREME_DARK || mean >= EXTREME_LIGHT);
+
+      if (isGutterLegacy) {
+        gutterRun++;
+        if (inContent && gutterRun >= gutterMinRows) {
+          inContent = false;
+          gutterRun = 0;
+        }
+      } else {
+        if (!inContent) { panels++; inContent = true; }
+        gutterRun = 0;
+      }
+
+      if (isGutterStrict) {
+        gutterRunStrict++;
+        if (inContentStrict && gutterRunStrict >= gutterMinRows) {
+          inContentStrict = false;
+          gutterRunStrict = 0;
+        }
+      } else {
+        if (!inContentStrict) { panelsStrict++; inContentStrict = true; }
+        gutterRunStrict = 0;
+      }
+    }
+  }
+
+  if (bitmap.close) bitmap.close();
+
+  // Per-segment shape — matches analyzePsdBytes so renderPrepRow can aggregate
+  // PSD and image segments in the same totals.
+  return {
+    name,
+    size_bytes: blob.size || 0,
+    width: w,
+    height: h,
+    top_group_names: [],
+    panel_subgroup_count: 0,
+    panel_subgroup_count_dedup: 0,
+    panels_by_bbox: 0,
+    panels_visual: panels,
+    panels_visual_strict: panelsStrict,
+    panels_visual_method: "image-canvas",
+    panel_subgroup_sample: [],
+    has_separated_dialogue_group: false,
+    has_separated_sfx_group: false,
+    total: 0, groups: 0, pixel: 1, text: 0,
+    panel_named: 0, sfx_named: 0,
+    dialogue_named: 0, effect_line_named: 0,
+    text_with_effects: 0, effect_keyword_named: 0,
+    text_samples: [],
+    is_image: true,
+    gutter_min_rows_used: gutterMinRows,
+  };
+}
+
+// Standalone-image wrapper: one image = one episode.
+async function analyzeOneImage(file, onProgress) {
+  const t0 = performance.now();
+  const segment = await analyzeImageBlob(file, file.name, onProgress);
+  const elapsed = Number(((performance.now() - t0) / 1000).toFixed(1));
+  return renderPrepRow(file.name, [segment], elapsed);
+}
+
+// Orchestrates one-or-many files. Renders incrementally so rows appear as
+// each episode finishes. Dispatches each file to the right analyzer based
+// on extension.
 async function processFiles(files) {
-  if (!librariesReady()) {
+  const validFiles = Array.from(files).filter(f =>
+    /\.zip$/i.test(f.name) || IMAGE_EXT_RE.test(f.name)
+  );
+  if (!validFiles.length) {
+    showError("No .zip / .jpg / .png / .webp files in your selection. Drop one of those, or a folder containing them.");
+    return;
+  }
+  validFiles.sort((a, b) => a.name.localeCompare(b.name));
+
+  const hasZips = validFiles.some(f => /\.zip$/i.test(f.name));
+  if (hasZips && !librariesReady()) {
     const missing = [];
     if (typeof JSZip === "undefined") missing.push("JSZip");
     if (typeof window.agPsd === "undefined") missing.push("ag-psd");
     showError(
       `Required librar${missing.length > 1 ? "ies" : "y"} ` +
-      `(${missing.join(", ")}) didn't load from the CDN.\n\n` +
-      `Check your internet connection and reload the page.`
+      `(${missing.join(", ")}) didn't load from the CDN — needed for .zip processing.\n\n` +
+      `Check your internet connection and reload the page. ` +
+      `Image-only (.jpg/.png) drops work without these libraries.`
     );
     return;
   }
-
-  const zipFiles = Array.from(files).filter(f => /\.zip$/i.test(f.name));
-  if (!zipFiles.length) {
-    showError("No .zip files found in your selection. Drop zips, or a folder containing zips.");
-    return;
-  }
-  zipFiles.sort((a, b) => a.name.localeCompare(b.name));
 
   $("#results").innerHTML = "";
   const rows = [];
 
-  for (let i = 0; i < zipFiles.length; i++) {
-    const file = zipFiles[i];
-    const fileFrac = (j, total) => (i + (j / total)) / zipFiles.length;
+  for (let i = 0; i < validFiles.length; i++) {
+    const file = validFiles[i];
+    const isImage = IMAGE_EXT_RE.test(file.name);
     setProgress(
-      `[${i + 1}/${zipFiles.length}] Reading ${file.name}…`,
-      i / zipFiles.length
+      `[${i + 1}/${validFiles.length}] Reading ${file.name}…`,
+      i / validFiles.length
     );
     await sleep(0);
 
     try {
-      const row = await analyzeOneZip(file, (psdName, j, total) => {
-        setProgress(
-          `[${i + 1}/${zipFiles.length}] ${file.name} → ${psdName} (${j}/${total})`,
-          fileFrac(j, total)
-        );
-      });
+      let row;
+      if (isImage) {
+        row = await analyzeOneImage(file, (rowsDone, rowsTotal) => {
+          setProgress(
+            `[${i + 1}/${validFiles.length}] ${file.name} → ${rowsDone}/${rowsTotal} rows`,
+            (i + rowsDone / rowsTotal) / validFiles.length
+          );
+        });
+      } else {
+        row = await analyzeOneZip(file, (psdName, j, total) => {
+          setProgress(
+            `[${i + 1}/${validFiles.length}] ${file.name} → ${psdName} (${j}/${total})`,
+            (i + j / total) / validFiles.length
+          );
+        });
+      }
       rows.push(row);
     } catch (e) {
       rows.push({ zip_name: file.name, error: e.message || String(e) });
@@ -707,6 +872,24 @@ function bandLabel(n) {
 // Tracks zip names the user has unchecked so the average/median exclude
 // them. Persists across incremental renders during a single batch.
 const uncheckedZips = new Set();
+
+const EMPTY_STATE_HTML = `<div class="empty">
+  <svg class="empty-illust" viewBox="0 0 160 240" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+      <rect x="15" y="10" width="130" height="55" rx="3"/>
+      <circle cx="80" cy="38" r="14"/>
+      <path d="M71 36 L75 40 M85 40 L89 36"/>
+      <rect x="15" y="75" width="130" height="55" rx="3"/>
+      <path d="M50 95 L110 95 Q120 95 120 105 L120 118 Q120 128 110 128 L80 128 L73 137 L72 128 L60 128 Q50 128 50 118 Z"/>
+      <rect x="15" y="140" width="130" height="90" rx="3"/>
+      <circle cx="55" cy="170" r="7"/>
+      <path d="M55 177 L55 200 M55 185 L45 200 M55 185 L65 200"/>
+      <circle cx="105" cy="170" r="7"/>
+      <path d="M105 177 L105 200 M105 185 L95 200 M105 185 L115 200"/>
+    </g>
+  </svg>
+  Drop zips above to start.
+</div>`;
 
 function renderMultiSummary(rows) {
   const errored = rows.filter(r => r.error);
@@ -816,7 +999,7 @@ function renderMultiSummary(rows) {
   });
   $("#reset-btn").addEventListener("click", () => {
     uncheckedZips.clear();
-    $("#results").innerHTML = '<div class="empty">Drop zips above to start.</div>';
+    $("#results").innerHTML = EMPTY_STATE_HTML;
     $("#file-input").value = "";
     $("#folder-input").value = "";
   });

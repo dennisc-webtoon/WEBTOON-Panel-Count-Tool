@@ -651,10 +651,13 @@ async function analyzeOneZip(file, onPsdProgress) {
 // Analyze a single image (JPG / PNG / WebP) as one episode. Uses the same
 // row-stddev algorithm as the PSD path, but reads pixels by tiling the
 // image through a canvas (browser-native decode, no library needed).
-// GUTTER_MIN_ROWS auto-scales with image width so a half-resolution
-// published JPG doesn't under-count gutters.
+// Images use a much larger gutter-min-rows than PSDs: published JPGs have
+// real inter-panel gutters that are hundreds of rows tall, while intra-
+// panel whitespace is consistently under ~25 rows. A high fixed threshold
+// cleanly separates the two without per-series tuning. Calibrated against
+// hand counts on The Seventh Client ep2/ep3 (88/78 → detected 87/76).
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
-const PSD_REFERENCE_WIDTH = 1500;   // GUTTER_MIN_ROWS was tuned at this width
+const IMAGE_GUTTER_MIN_ROWS = 150;
 const CANVAS_TILE_HEIGHT = 8000;    // safe under Safari's ~16k canvas height cap
 
 // Per-segment image analysis. Returns the same shape as analyzePsdBytes so
@@ -673,10 +676,7 @@ async function analyzeImageBlob(blob, name, onProgress) {
     throw new Error(`Image ${name} too small (${w}×${h}px) — expected a tall webtoon strip.`);
   }
 
-  const gutterMinRows = Math.max(
-    15,
-    Math.round(GUTTER_MIN_ROWS * w / PSD_REFERENCE_WIDTH)
-  );
+  const gutterMinRows = IMAGE_GUTTER_MIN_ROWS;
 
   const canvas = document.createElement("canvas");
   canvas.width = w;
